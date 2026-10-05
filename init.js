@@ -26,7 +26,7 @@
             // so tag ours (and the separator above it) to be able to toggle it.
             menu.find('a').each(function() {
                 var onclick = this.getAttribute('onclick') || '';
-                if (onclick.indexOf('codiad.Download.file') !== -1) {
+                if (onclick.indexOf('codiad.Download.') !== -1) {
                     $(this).addClass('cdx-download')
                         .prev('hr')
                         .addClass('cdx-download');
@@ -36,19 +36,29 @@
             // contextMenuShow() has already applied its .file-only and
             // .no-external rules by the time this fires.
             amplify.subscribe('context-menu.onShow', function(obj) {
-                if (!obj || obj.type !== 'file') {
+                if (!obj || !obj.type) {
                     return;
                 }
-                codiad.Download.place();
+                codiad.Download.place(obj.type);
             });
         },
 
         ////////////////////////////////////////////////////////////
-        //  Show our entry only when core has nothing to offer:
-        //  two identical "Download" items in one menu would be worse
-        //  than one.
+        //  Decide who owns the "download" slot for the clicked node.
+        //
+        //  Files: core already downloads workspace-relative files, and a
+        //  second item called "Download" would just be a duplicate, so ours
+        //  only appears where core hides itself (.no-external).
+        //
+        //  Directories: core's folder item needs the PHP zip extension to
+        //  build the archive and has nothing to say about absolute paths, so
+        //  we take the slot over instead of stacking on top of a broken one.
+        //
+        //  Core picks per node type with .show()/.hide(), which sets inline
+        //  display, so we have to repeat the same rules rather than trust
+        //  the applies-to classes alone.
         ////////////////////////////////////////////////////////////
-        place: function() {
+        place: function(type) {
             var entry = $('#context-menu .cdx-download');
             if (!entry.length) {
                 return;
@@ -59,11 +69,26 @@
             });
             // css() instead of :visible - the menu is still fading in
             var coreShown = core.length > 0 && core.css('display') !== 'none';
-            if (coreShown) {
-                entry.hide();
-            } else {
-                entry.show();
-            }
+            var isDir = (type === 'directory' || type === 'root');
+            entry.each(function() {
+                var el = $(this);
+                // Mirrors filemanager.contextMenuShow(): .directory-only shows
+                // for directories and the root, .file-only for files only.
+                var applies = el.hasClass('directory-only')
+                    ? isDir
+                    : (type === 'file');
+                if (!applies) {
+                    el.hide();
+                } else if (coreShown && !isDir) {
+                    el.hide();
+                } else {
+                    el.show();
+                    // Exactly one "download folders" item, ours.
+                    if (isDir) {
+                        core.hide();
+                    }
+                }
+            });
         },
 
         ////////////////////////////////////////////////////////////
@@ -81,16 +106,42 @@
             this.download(path);
         },
 
+        ////////////////////////////////////////////////////////////
+        //  Download the folder behind a context menu entry as a zip
+        //  named after the folder.
+        ////////////////////////////////////////////////////////////
+        directory: function(path) {
+            if (!path) {
+                return;
+            }
+            this.download(path, true);
+        },
+
         url: function(path) {
             return this.path + 'controller.php?action=download&path=' +
                 encodeURIComponent(path);
         },
 
-        download: function(path) {
+        download: function(path, isDir) {
             // Timestamp: asking for the same file twice has to re-request it
             var src = this.url(path) + '&t=' + (+new Date());
             var frame = $('#download');
             if (frame.length) {
+                // Zipping a large tree is not instant, and the request runs
+                // inside this hidden iframe, so leave a trace behind.
+                var notice = null;
+                if (isDir) {
+                    codiad.message.notice('Preparing ' +
+                        path.replace(/\\/g, '/').split('/').pop() + '.zip...', {
+                            sticky: true
+                        });
+                    notice = true;
+                }
+                frame.one('load', function() {
+                    if (notice) {
+                        codiad.message.hide();
+                    }
+                });
                 // Hidden iframe (index.php) - the attachment headers do the rest
                 frame.attr('src', src);
             } else {
