@@ -1,0 +1,16 @@
+[
+    {
+        "author": "CheziNut",
+        "version": "1.0.0",
+        "name": "File Download",
+        "url": "https://github.com/chezinut/Codiad-Download",
+        "contextmenu": [
+            {
+                "action": "codiad.Download.file($('#context-menu').attr('data-path'));",
+                "icon": "icon-download",
+                "applies-to": "file-only",
+                "title": "Download"
+            }
+        ]
+    }
+]
